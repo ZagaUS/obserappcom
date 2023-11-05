@@ -1,0 +1,103 @@
+version: '3'
+# networks:
+#   mongodb_net:
+#     driver: bridge
+#     ipam:
+#       driver: default
+#       config:
+#       # Change this subnet range if it conflicts with your personal/work network
+#         # - subnet: 192.168.213.0/24
+#         #   gateway: 192.168.213.1
+services:
+    mongodb:
+      image: mongo:latest
+      container_name: mongodb
+      hostname: mongodb
+      # networks:
+      #   - mongodb_net
+      ports:
+        - 27017:27017
+    mongoclient:
+      image: mongoclient/mongoclient:latest
+      container_name: mongoclient
+      hostname: mongoclient
+      depends_on:
+        - mongodb
+      # networks:
+      #   - mongodb_net
+      ports:
+        - 3300:3000
+    obserbackendapi:
+      image: anushiya22/observai-backend-jvm:latest
+      container_name: obserbackendapi
+      hostname: obserbackendapi
+      depends_on:
+        - mongodb
+        - kafka-broker-1
+      # networks:
+      #   - mongodb_net
+      ports:
+        - 8082:8080
+    obserqueryapi:
+      image: anushiya22/observai-query-backend-jvm:latest
+      container_name: obserqueryapi
+      hostname: obserqueryapi
+      depends_on:
+        - mongodb
+      # networks:
+      #   - mongodb_net
+      ports:
+        - 8083:8080
+    zookeeper:
+      image: confluentinc/cp-zookeeper:latest
+      container_name: zookeeper
+      environment:
+        ZOOKEEPER_CLIENT_PORT: 2181
+        ZOOKEEPER_TICK_TIME: 2000
+      ports:
+        - "2181:2181"
+
+    schema-registry:
+      image: confluentinc/cp-schema-registry:latest
+      hostname: schema-registry
+      depends_on:
+        - kafka-broker-1
+      ports:
+        - "8081:8081"
+      environment:
+        SCHEMA_REGISTRY_HOST_NAME: schema-registry
+        SCHEMA_REGISTRY_KAFKASTORE_CONNECTION_URL: 'zookeeper:2181'
+        SCHEMA_REGISTRY_LISTENERS: http://schema-registry:8081
+        SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS: PLAINTEXT://kafka-broker-1:9092,PLAINTEXT_INTERNAL://localhost:19092
+        SCHEMA_REGISTRY_DEBUG: 'true'
+
+    kafka-broker-1:
+      image: confluentinc/cp-kafka:latest
+      hostname: kafka-broker-1
+      ports:
+        - "19092:19092"
+      depends_on:
+        - zookeeper
+      environment:
+        KAFKA_BROKER_ID: 1
+        KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+        KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+        KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker-1:9092,PLAINTEXT_INTERNAL://localhost:19092
+        KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+    observai:
+      image: harinolon/observai-insecure:latest
+      container_name: observai
+      hostname: observai
+      depends_on:
+        - obserbackendapi
+        - obserqueryapi
+      # networks:
+      #   - mongodb_net
+      environment:
+        REACT_APP_APIURL_LOGS: 'obserqueryapi:8083'
+        REACT_APP_APIURL_TRACES: 'obserqueryapi:8083'
+        REACT_APP_APIURL_METRICS: 'obserqueryapi:8083'
+        REACT_APP_APIURL_AUTH: "'obserbackendapi:8082'"
+      ports:
+        - 8084:8080
